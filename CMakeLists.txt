@@ -4,7 +4,8 @@ if (NOT DEFINED CMAKE_BUILD_TYPE)
   set (CMAKE_BUILD_TYPE Release CACHE STRING "Build type")
 endif ()
 
-project (fftw)
+project (fftw VERSION 3.3.8)
+include (flags OPTIONAL)
 
 if (POLICY CMP0042)
   cmake_policy (SET CMP0042 NEW)
@@ -27,6 +28,23 @@ option (ENABLE_AVX "Compile with AVX instruction set support" OFF)
 option (ENABLE_AVX2 "Compile with AVX2 instruction set support" OFF)
 
 option (DISABLE_FORTRAN "Disable Fortran wrapper routines" OFF)
+
+option (INSTALL_CONFIG "Install pkgconfig, FFTW3*Config*.cmake files" ON)
+
+if (XP_INSTALL_DIRS)
+  if (NOT DEFINED FFTW_VER)
+    set (FFTW_VER ${PROJECT_VERSION})
+  elseif (NOT FFTW_VER VERSION_EQUAL PROJECT_VERSION)
+    message (AUTHOR_WARNING "version passed in (${FFTW_VER}) doesn't match cmake project() VERSION (${PROJECT_VERSION})")
+  endif ()
+  set (CMAKE_INSTALL_INCLUDEDIR include/${PROJECT_NAME}_${FFTW_VER}/${PROJECT_NAME})
+  set (CMAKE_INSTALL_IFC include/${PROJECT_NAME}_${FFTW_VER})
+  set (TARGETS_FILE ${PROJECT_NAME}@PREC@_${FFTW_VER}-targets)
+  set (VER_EMBED _${FFTW_VER})
+else ()
+  set (CMAKE_INSTALL_IFC include)
+  set (TARGETS_FILE FFTW3LibraryDepends)
+endif ()
 
 include(GNUInstallDirs)
 
@@ -86,11 +104,14 @@ check_symbol_exists (snprintf stdio.h HAVE_SNPRINTF)
 check_symbol_exists (strchr string.h HAVE_STRCHR)
 check_symbol_exists (sysctl unistd.h HAVE_SYSCTL)
 
+include (CMakePushCheckState)
+cmake_push_check_state ()
 if (UNIX)
   set (CMAKE_REQUIRED_LIBRARIES m)
 endif ()
 check_symbol_exists (cosl math.h HAVE_COSL)
 check_symbol_exists (sinl math.h HAVE_SINL)
+cmake_pop_check_state ()
 
 include (CheckTypeSize)
 check_type_size ("float" SIZEOF_FLOAT)
@@ -274,7 +295,7 @@ if (HAVE_AVX2)
   list (APPEND SOURCEFILES ${fftw_dft_simd_avx2_SOURCE} ${fftw_rdft_simd_avx2_SOURCE})
 endif ()
 
-set (FFTW_VERSION 3.3.7)
+set (FFTW_VERSION ${PROJECT_VERSION})
 
 set (PREC_SUFFIX)
 if (ENABLE_FLOAT)
@@ -296,6 +317,8 @@ if (ENABLE_QUAD_PRECISION)
 endif ()
 set (fftw3_lib fftw3${PREC_SUFFIX})
 
+string (REPLACE "@PREC@" "${PREC_SUFFIX}" TARGETS_FILE ${TARGETS_FILE})
+
 configure_file (cmake.config.h.in config.h @ONLY)
 include_directories (${CMAKE_CURRENT_BINARY_DIR})
 
@@ -304,7 +327,8 @@ if (BUILD_SHARED_LIBS)
 endif ()
 
 add_library (${fftw3_lib} ${SOURCEFILES})
-target_include_directories (${fftw3_lib} INTERFACE $<INSTALL_INTERFACE:include>)
+set_target_properties(${fftw3_lib} PROPERTIES OUTPUT_NAME ${fftw3_lib}${VER_EMBED})
+target_include_directories (${fftw3_lib} INTERFACE $<INSTALL_INTERFACE:${CMAKE_INSTALL_IFC}>)
 if (MSVC)
   target_compile_definitions (${fftw3_lib} PRIVATE /bigobj)
 endif ()
@@ -334,7 +358,7 @@ if (Threads_FOUND)
     target_link_libraries (${fftw3_lib} ${CMAKE_THREAD_LIBS_INIT})
   else ()
     add_library (${fftw3_lib}_threads ${fftw_threads_SOURCE})
-    target_include_directories (${fftw3_lib}_threads INTERFACE $<INSTALL_INTERFACE:include>)
+    target_include_directories (${fftw3_lib}_threads INTERFACE $<INSTALL_INTERFACE:${CMAKE_INSTALL_IFC}>)
     target_link_libraries (${fftw3_lib}_threads ${fftw3_lib})
     target_link_libraries (${fftw3_lib}_threads ${CMAKE_THREAD_LIBS_INIT})
     list (APPEND subtargets ${fftw3_lib}_threads)
@@ -343,7 +367,7 @@ endif ()
 
 if (OPENMP_FOUND)
   add_library (${fftw3_lib}_omp ${fftw_omp_SOURCE})
-  target_include_directories (${fftw3_lib}_omp INTERFACE $<INSTALL_INTERFACE:include>)
+  target_include_directories (${fftw3_lib}_omp INTERFACE $<INSTALL_INTERFACE:${CMAKE_INSTALL_IFC}>)
   target_link_libraries (${fftw3_lib}_omp ${fftw3_lib})
   target_link_libraries (${fftw3_lib}_omp ${CMAKE_THREAD_LIBS_INIT})
   list (APPEND subtargets ${fftw3_lib}_omp)
@@ -358,12 +382,13 @@ foreach(subtarget ${subtargets})
           ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
 endforeach ()
 install(TARGETS ${fftw3_lib}
-          EXPORT FFTW3LibraryDepends
+          EXPORT ${TARGETS_FILE}
           RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
           LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
           ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
 
 install (FILES api/fftw3.h DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+if (NOT DISABLE_FORTRAN)
 if (EXISTS ${CMAKE_SOURCE_DIR}/api/fftw3.f)
   install (FILES api/fftw3.f api/fftw3l.f03 api/fftw3q.f03 DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 endif ()
@@ -373,6 +398,7 @@ if (EXISTS ${CMAKE_SOURCE_DIR}/api/fftw3.f03.in)
   file (APPEND ${CMAKE_CURRENT_BINARY_DIR}/fftw3.f03 "  integer, parameter :: C_FFTW_R2R_KIND = ${C_FFTW_R2R_KIND}\n\n")
   file (APPEND ${CMAKE_CURRENT_BINARY_DIR}/fftw3.f03 "${FFTW3_F03_IN}")
   install (FILES ${CMAKE_CURRENT_BINARY_DIR}/fftw3.f03 DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+endif ()
 endif ()
 
 if (BUILD_TESTS)
@@ -400,6 +426,7 @@ if (BUILD_TESTS)
   endif ()
 endif ()
 
+if (INSTALL_CONFIG)
 # pkgconfig file
 set (prefix ${CMAKE_INSTALL_PREFIX})
 set (exec_prefix ${CMAKE_INSTALL_PREFIX})
@@ -422,8 +449,13 @@ install (FILES
 	  DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/fftw3${PREC_SUFFIX}
          COMPONENT Development)
 
-export (TARGETS ${fftw3_lib} NAMESPACE FFTW3:: FILE ${PROJECT_BINARY_DIR}/FFTW3LibraryDepends.cmake)
-install(EXPORT FFTW3LibraryDepends
+set (TARGETS_FILE_DEST ${CMAKE_INSTALL_LIBDIR}/cmake/fftw3${PREC_SUFFIX})
+else()
+set (TARGETS_FILE_DEST ${CMAKE_INSTALL_LIBDIR}/cmake)
+endif ()
+
+export (TARGETS ${fftw3_lib} NAMESPACE FFTW3:: FILE ${PROJECT_BINARY_DIR}/${TARGETS_FILE}.cmake)
+install(EXPORT ${TARGETS_FILE}
         NAMESPACE FFTW3::
-        DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/fftw3${PREC_SUFFIX}
+        DESTINATION ${TARGETS_FILE_DEST}
         COMPONENT Development)
