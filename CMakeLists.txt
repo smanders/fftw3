@@ -153,7 +153,8 @@ endif ()
 include (CheckCCompilerFlag)
 
 if (ENABLE_SSE)
-  foreach (FLAG "-msse" "/arch:SSE")
+  # TRICKY: /arch:SSE2 is not a valid flag for MSVC 64-bit, /favor:[AMD|INTEL]64 is valid
+  foreach (FLAG "-msse" "/arch:SSE" "/favor:${CMAKE_SYSTEM_PROCESSOR}")
     unset (HAVE_SSE CACHE)
     check_c_compiler_flag (${FLAG} HAVE_SSE)
     if (HAVE_SSE)
@@ -164,7 +165,8 @@ if (ENABLE_SSE)
 endif ()
 
 if (ENABLE_SSE2)
-  foreach (FLAG "-msse2" "/arch:SSE2")
+  # TRICKY: /arch:SSE2 is not a valid flag for MSVC 64-bit, /favor:[AMD|INTEL]64 is valid
+  foreach (FLAG "-msse2" "/arch:SSE2" "/favor:${CMAKE_SYSTEM_PROCESSOR}")
     unset (HAVE_SSE2 CACHE)
     check_c_compiler_flag (${FLAG} HAVE_SSE2)
     if (HAVE_SSE2)
